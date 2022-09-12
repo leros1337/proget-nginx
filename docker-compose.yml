@@ -1,0 +1,82 @@
+version: '3.8'
+services:
+  pg:
+    image: proget.inedo.com/productimages/inedo/proget:22.0.7
+    container_name: proget
+    restart: unless-stopped
+    environment:
+      SQL_CONNECTION_STRING: Data Source=inedo-sql; Initial Catalog=ProGet; User ID=sa; Password="SuperStrongPass!1337"
+    expose:
+      - 80
+      - 443
+    networks:
+      inedo:
+        aliases:
+          - proget
+    volumes:
+      - ./proget/proget-packages:/var/proget/packages
+    depends_on:
+      - db
+      
+# If `failed to open the explicitly specified database` in inedo-sql
+# On first execute `docker exec -it inedo-sql /opt/mssql-tools/bin/sqlcmd -S localhost -U SA -P 'SuperStrongPass!1337' -Q 'CREATE DATABASE [ProGet] COLLATE SQL_Latin1_General_CP1_CI_AS'`
+  db:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    container_name: inedo-sql
+    restart: unless-stopped
+    user: root
+    expose:
+      - 1433
+    networks:
+      inedo:
+        aliases:
+          - inedo-sql
+    environment:
+      ACCEPT_EULA: Y
+      MSSQL_SA_PASSWORD: "SuperStrongPass!1337"
+      MSSQL_PID: Express
+    volumes:
+      - ./proget/inedo-sql/data:/var/opt/mssql/data
+      - ./proget/inedo-sql/log:/var/opt/mssql/log
+      - ./proget/inedo-sql/secrets:/var/opt/mssql/secrets
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    restart: unless-stopped
+    volumes:
+      - ./nginx/conf:/etc/nginx/conf.d
+      - ./nginx/logs:/var/log/nginx
+      - ./nginx/ssl:/etc/ssl/cert
+    ports:
+      - "80:80"
+      - "443:443"
+    networks:
+      inedo:
+      monitor-net:
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.45.0
+    container_name: cadvisor
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      #- /cgroup:/cgroup:ro #doesn't work on MacOS only for Linux
+    restart: unless-stopped
+    expose:
+      - 8000
+    networks:
+      - monitor-net
+    labels:
+      org.label-schema.group: "monitoring"
+
+networks:
+  inedo:
+    name: inedo
+  monitor-net:
+    driver: bridge
